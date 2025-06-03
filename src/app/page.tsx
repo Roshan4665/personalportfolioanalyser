@@ -18,6 +18,9 @@ import { useToast } from "@/hooks/use-toast";
 import { FileText } from 'lucide-react';
 
 const LOCAL_STORAGE_PORTFOLIO_KEY = 'fundFolioPortfolio';
+const CDN_URL_CSV = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mutual_funds.csv';
+const CDN_URL_DEFAULT_PORTFOLIO = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/my_funds.json';
+
 
 export default function HomePage() {
   const [allMutualFunds, setAllMutualFunds] = React.useState<MutualFund[]>([]);
@@ -41,7 +44,7 @@ export default function HomePage() {
             if (Array.isArray(parsedPortfolio) && parsedPortfolio.every(item => item.id && typeof item.weeklyInvestment === 'number')) {
               loadedPortfolio = parsedPortfolio;
             } else {
-              console.warn("Malformed portfolio data in local storage, attempting to load default.");
+              console.warn("Malformed portfolio data in local storage, attempting to load default from CDN.");
               localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); 
             }
           } catch (error) {
@@ -59,7 +62,7 @@ export default function HomePage() {
         } else {
           toast({
             title: "Loading Default Portfolio",
-            description: "No local portfolio found, attempting to load default funds from src/data/my_funds.json.",
+            description: `No local portfolio found, attempting to load default funds from CDN: ${CDN_URL_DEFAULT_PORTFOLIO}.`,
           });
           const defaultPortfolioResult = await getDefaultPortfolio();
           if (defaultPortfolioResult && !('error' in defaultPortfolioResult)) {
@@ -67,12 +70,12 @@ export default function HomePage() {
             localStorage.setItem(LOCAL_STORAGE_PORTFOLIO_KEY, JSON.stringify(defaultPortfolioResult));
             toast({
               title: "Default Portfolio Loaded",
-              description: `Loaded ${defaultPortfolioResult.length} funds from src/data/my_funds.json.`,
+              description: `Loaded ${defaultPortfolioResult.length} funds from CDN.`,
             });
           } else {
             toast({
               title: "Failed to Load Default Portfolio",
-              description: defaultPortfolioResult?.error || "Could not load default funds.",
+              description: defaultPortfolioResult?.error || "Could not load default funds from CDN.",
               variant: "destructive",
             });
             setPortfolio([]); 
@@ -109,28 +112,28 @@ export default function HomePage() {
           setAllMutualFunds(funds);
           if (funds.length === 0 && result.trim() !== "") {
             toast({
-              title: "Local CSV Parsing Issue",
-              description: "No valid fund data found in src/data/mutual_funds.csv. Please check its format and content.",
+              title: "CDN CSV Parsing Issue",
+              description: `No valid fund data found in CSV from CDN: ${CDN_URL_CSV}. Please check its format and content.`,
               variant: "destructive",
             });
           } else if (funds.length > 0) {
              toast({
               title: "Fund Data Loaded",
-              description: `Successfully loaded ${funds.length} funds from local CSV.`,
+              description: `Successfully loaded ${funds.length} funds from CDN CSV.`,
             });
           }
         } catch (error) {
-          console.error("Error parsing local CSV data:", error);
+          console.error("Error parsing CDN CSV data:", error);
           toast({
-            title: "Local CSV Parsing Error",
-            description: "Failed to parse src/data/mutual_funds.csv. Please ensure it's correctly formatted.",
+            title: "CDN CSV Parsing Error",
+            description: `Failed to parse CSV from CDN: ${CDN_URL_CSV}. Please ensure it's correctly formatted.`,
             variant: "destructive",
           });
           setAllMutualFunds([]);
         }
       } else {
         toast({
-          title: "Error Loading Local CSV",
+          title: "Error Loading CDN CSV",
           description: result.error,
           variant: "destructive",
         });
@@ -230,7 +233,7 @@ export default function HomePage() {
             FundFolio Analyzer
           </h1>
           <p className="text-lg text-muted-foreground mt-2">
-            Your mutual fund data is loaded from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code>. Build your portfolio and gain insights.
+            Your mutual fund data is loaded from <code className="bg-muted px-1 py-0.5 rounded break-all">{CDN_URL_CSV}</code>. Build your portfolio and gain insights.
           </p>
         </div>
       </header>
@@ -240,7 +243,7 @@ export default function HomePage() {
           <CardContent className="py-16 flex flex-col items-center justify-center text-center">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-t-transparent mb-6"></div>
             <h3 className="font-headline text-xl text-primary mb-2">Loading Fund Data...</h3>
-            <p className="text-muted-foreground">Reading from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code>.</p>
+            <p className="text-muted-foreground">Reading from <code className="bg-muted px-1 py-0.5 rounded break-all">{CDN_URL_CSV}</code>.</p>
           </CardContent>
         </Card>
       )}
@@ -251,9 +254,9 @@ export default function HomePage() {
             <FileText className="w-24 h-24 text-muted-foreground mb-6" />
             <h3 className="font-headline text-xl text-primary mb-2">No Fund Data Loaded</h3>
             <p className="text-muted-foreground">
-              Could not load data from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code>.
+              Could not load data from <code className="bg-muted px-1 py-0.5 rounded break-all">{CDN_URL_CSV}</code>.
               <br />
-              Please ensure the file exists, is not empty, and is correctly formatted.
+              Please ensure the URL is accessible and the file is correctly formatted.
             </p>
           </CardContent>
         </Card>
@@ -278,7 +281,7 @@ export default function HomePage() {
           <Card className="shadow-md">
              <CardHeader>
                 <CardTitle className="font-headline text-2xl text-primary">Search & Add Funds</CardTitle>
-                <CardDescription>Find funds from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code> and add them to your portfolio.</CardDescription>
+                <CardDescription>Find funds from the loaded CDN data and add them to your portfolio.</CardDescription>
             </CardHeader>
             <CardContent>
               <FundSearch
