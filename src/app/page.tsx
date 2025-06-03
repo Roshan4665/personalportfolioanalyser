@@ -15,7 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from "@/hooks/use-toast";
-import { FileText } from 'lucide-react'; // Removed unused Kite-specific icons
+import { FileText } from 'lucide-react';
 
 const LOCAL_STORAGE_PORTFOLIO_KEY = 'fundFolioPortfolio';
 
@@ -29,7 +29,6 @@ export default function HomePage() {
   const [isLoadingCsv, setIsLoadingCsv] = React.useState(true);
   const { toast } = useToast();
 
-  // Load portfolio from local storage or default JSON on initial mount
   React.useEffect(() => {
     const loadInitialPortfolio = async () => {
       try {
@@ -43,11 +42,11 @@ export default function HomePage() {
               loadedPortfolio = parsedPortfolio;
             } else {
               console.warn("Malformed portfolio data in local storage, attempting to load default.");
-              localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); // Clear malformed data
+              localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); 
             }
           } catch (error) {
             console.error("Error parsing portfolio from local storage:", error);
-            localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); // Clear corrupted data
+            localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); 
           }
         }
 
@@ -58,10 +57,9 @@ export default function HomePage() {
             description: "Your portfolio has been loaded from previous session.",
           });
         } else {
-          // Local storage is empty or was cleared/malformed, try loading from default JSON
           toast({
             title: "Loading Default Portfolio",
-            description: "No local portfolio found, attempting to load default funds from data/my_funds.json.",
+            description: "No local portfolio found, attempting to load default funds from src/data/my_funds.json.",
           });
           const defaultPortfolioResult = await getDefaultPortfolio();
           if (defaultPortfolioResult && !('error' in defaultPortfolioResult)) {
@@ -69,7 +67,7 @@ export default function HomePage() {
             localStorage.setItem(LOCAL_STORAGE_PORTFOLIO_KEY, JSON.stringify(defaultPortfolioResult));
             toast({
               title: "Default Portfolio Loaded",
-              description: `Loaded ${defaultPortfolioResult.length} funds from data/my_funds.json.`,
+              description: `Loaded ${defaultPortfolioResult.length} funds from src/data/my_funds.json.`,
             });
           } else {
             toast({
@@ -77,7 +75,7 @@ export default function HomePage() {
               description: defaultPortfolioResult?.error || "Could not load default funds.",
               variant: "destructive",
             });
-            setPortfolio([]); // Ensure portfolio is an empty array if all else fails
+            setPortfolio([]); 
           }
         }
       } catch (error) {
@@ -87,14 +85,13 @@ export default function HomePage() {
           description: "An unexpected error occurred while loading your portfolio.",
           variant: "destructive",
         });
-        setPortfolio([]); // Ensure portfolio is an empty array on error
+        setPortfolio([]); 
       }
     };
     loadInitialPortfolio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]); // Only run once on mount, toast is stable
+  }, [toast]); 
 
-  // Save portfolio to local storage whenever it changes
   React.useEffect(() => {
     if (typeof window !== 'undefined' && (portfolio.length > 0 || localStorage.getItem(LOCAL_STORAGE_PORTFOLIO_KEY))) {
         localStorage.setItem(LOCAL_STORAGE_PORTFOLIO_KEY, JSON.stringify(portfolio));
@@ -102,7 +99,6 @@ export default function HomePage() {
   }, [portfolio]);
 
 
-  // Load mutual fund data from CSV
   React.useEffect(() => {
     const loadData = async () => {
       setIsLoadingCsv(true);
@@ -114,7 +110,7 @@ export default function HomePage() {
           if (funds.length === 0 && result.trim() !== "") {
             toast({
               title: "Local CSV Parsing Issue",
-              description: "No valid fund data found in data/mutual_funds.csv. Please check its format and content.",
+              description: "No valid fund data found in src/data/mutual_funds.csv. Please check its format and content.",
               variant: "destructive",
             });
           } else if (funds.length > 0) {
@@ -127,7 +123,7 @@ export default function HomePage() {
           console.error("Error parsing local CSV data:", error);
           toast({
             title: "Local CSV Parsing Error",
-            description: "Failed to parse data/mutual_funds.csv. Please ensure it's correctly formatted.",
+            description: "Failed to parse src/data/mutual_funds.csv. Please ensure it's correctly formatted.",
             variant: "destructive",
           });
           setAllMutualFunds([]);
@@ -177,6 +173,21 @@ export default function HomePage() {
     }
   };
 
+  const handleUpdateWeeklyInvestment = (fundId: string, newAmount: number) => {
+    const updatedPortfolio = portfolio.map(item =>
+      item.id === fundId ? { ...item, weeklyInvestment: newAmount } : item
+    );
+    setPortfolio(updatedPortfolio);
+    const updatedFund = updatedPortfolio.find(item => item.id === fundId);
+    if (updatedFund) {
+      toast({
+        title: "Investment Updated",
+        description: `Weekly investment for ${updatedFund.name} updated to ₹${newAmount.toLocaleString()}.`,
+      });
+    }
+  };
+
+
   React.useEffect(() => {
     if (portfolio.length > 0) {
       const runAnalysis = async () => {
@@ -207,7 +218,7 @@ export default function HomePage() {
       };
       runAnalysis();
     } else {
-      setAnalysisResult(null); // Clear analysis if portfolio is empty
+      setAnalysisResult(null); 
     }
   }, [portfolio, toast]);
 
@@ -219,7 +230,7 @@ export default function HomePage() {
             FundFolio Analyzer
           </h1>
           <p className="text-lg text-muted-foreground mt-2">
-            Your mutual fund data is loaded from <code className="bg-muted px-1 py-0.5 rounded">data/mutual_funds.csv</code>. Build your portfolio and gain insights.
+            Your mutual fund data is loaded from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code>. Build your portfolio and gain insights.
           </p>
         </div>
       </header>
@@ -229,7 +240,7 @@ export default function HomePage() {
           <CardContent className="py-16 flex flex-col items-center justify-center text-center">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-t-transparent mb-6"></div>
             <h3 className="font-headline text-xl text-primary mb-2">Loading Fund Data...</h3>
-            <p className="text-muted-foreground">Reading from <code className="bg-muted px-1 py-0.5 rounded">data/mutual_funds.csv</code>.</p>
+            <p className="text-muted-foreground">Reading from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code>.</p>
           </CardContent>
         </Card>
       )}
@@ -240,7 +251,7 @@ export default function HomePage() {
             <FileText className="w-24 h-24 text-muted-foreground mb-6" />
             <h3 className="font-headline text-xl text-primary mb-2">No Fund Data Loaded</h3>
             <p className="text-muted-foreground">
-              Could not load data from <code className="bg-muted px-1 py-0.5 rounded">data/mutual_funds.csv</code>.
+              Could not load data from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code>.
               <br />
               Please ensure the file exists, is not empty, and is correctly formatted.
             </p>
@@ -253,6 +264,7 @@ export default function HomePage() {
           <PortfolioManager
             portfolioItems={portfolio}
             onRemoveItem={handleRemoveFromPortfolio}
+            onUpdateItemInvestment={handleUpdateWeeklyInvestment}
           />
           <div className="mt-8"> 
             <AllocationPieChart analysisResult={analysisResult} isLoading={isAnalyzing} />
@@ -262,11 +274,11 @@ export default function HomePage() {
       
       {allMutualFunds.length > 0 && (
         <>
-          <Separator />
+          <Separator className="my-8" />
           <Card className="shadow-md">
              <CardHeader>
                 <CardTitle className="font-headline text-2xl text-primary">Search & Add Funds</CardTitle>
-                <CardDescription>Find funds from <code className="bg-muted px-1 py-0.5 rounded">data/mutual_funds.csv</code> and add them to your portfolio.</CardDescription>
+                <CardDescription>Find funds from <code className="bg-muted px-1 py-0.5 rounded">src/data/mutual_funds.csv</code> and add them to your portfolio.</CardDescription>
             </CardHeader>
             <CardContent>
               <FundSearch
