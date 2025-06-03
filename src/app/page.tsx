@@ -12,8 +12,9 @@ import { PortfolioManager } from '@/components/PortfolioManager';
 import { AllocationPieChart } from '@/components/AllocationPieChart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+// Button and Input are not directly used here anymore but might be used by child components if not removed elsewhere
+// import { Button } from '@/components/ui/button';
+// import { Input } from '@/components/ui/input';
 import { useToast } from "@/hooks/use-toast";
 import { FileText } from 'lucide-react';
 
@@ -45,11 +46,11 @@ export default function HomePage() {
               loadedPortfolio = parsedPortfolio;
             } else {
               console.warn("Malformed portfolio data in local storage, attempting to load default from CDN.");
-              localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); 
+              localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY);
             }
           } catch (error) {
             console.error("Error parsing portfolio from local storage:", error);
-            localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); 
+            localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY);
           }
         }
 
@@ -78,7 +79,7 @@ export default function HomePage() {
               description: defaultPortfolioResult?.error || "Could not load default funds from CDN.",
               variant: "destructive",
             });
-            setPortfolio([]); 
+            setPortfolio([]);
           }
         }
       } catch (error) {
@@ -88,12 +89,12 @@ export default function HomePage() {
           description: "An unexpected error occurred while loading your portfolio.",
           variant: "destructive",
         });
-        setPortfolio([]); 
+        setPortfolio([]);
       }
     };
     loadInitialPortfolio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]); 
+  }, [toast]);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined' && (portfolio.length > 0 || localStorage.getItem(LOCAL_STORAGE_PORTFOLIO_KEY))) {
@@ -149,7 +150,7 @@ export default function HomePage() {
     setIsDialogOpen(true);
   };
 
-  const handleAddFundToPortfolio = (fund: MutualFund, weeklyInvestment: number) => { 
+  const handleAddFundToPortfolio = (fund: MutualFund, weeklyInvestment: number) => {
     if (portfolio.find(item => item.id === fund.id)) {
        toast({
         title: "Fund Exists",
@@ -158,10 +159,10 @@ export default function HomePage() {
       });
       return;
     }
-    setPortfolio(prev => [...prev, { ...fund, weeklyInvestment }]); 
+    setPortfolio(prev => [...prev, { ...fund, weeklyInvestment }]);
     toast({
       title: "Fund Added",
-      description: `${fund.name} added to your portfolio with ₹${weeklyInvestment.toLocaleString()} weekly investment.`, 
+      description: `${fund.name} added to your portfolio with ₹${weeklyInvestment.toLocaleString()} weekly investment.`,
     });
   };
 
@@ -196,16 +197,16 @@ export default function HomePage() {
       const runAnalysis = async () => {
         setIsAnalyzing(true);
         try {
-          const aiInput: AnalyzePortfolioAllocationInput = {
+          const analysisInput: AnalyzePortfolioAllocationInput = {
             portfolio: portfolio.map(p => ({
               name: p.name,
               largeCapHolding: p.percentLargecapHolding ?? 0,
               midCapHolding: p.percentMidcapHolding ?? 0,
               smallCapHolding: p.percentSmallcapHolding ?? 0,
-              weeklyInvestment: p.weeklyInvestment, 
+              weeklyInvestment: p.weeklyInvestment,
             })),
           };
-          const result = await analyzePortfolioAllocation(aiInput);
+          const result = await analyzePortfolioAllocation(analysisInput);
           setAnalysisResult(result);
         } catch (error) {
           console.error("Error analyzing portfolio:", error);
@@ -221,7 +222,7 @@ export default function HomePage() {
       };
       runAnalysis();
     } else {
-      setAnalysisResult(null); 
+      setAnalysisResult(null);
     }
   }, [portfolio, toast]);
 
@@ -262,14 +263,14 @@ export default function HomePage() {
         </Card>
       )}
       
-      {(portfolio.length > 0 || allMutualFunds.length > 0) && ( 
+      {(portfolio.length > 0 || allMutualFunds.length > 0) && (
         <>
           <PortfolioManager
             portfolioItems={portfolio}
             onRemoveItem={handleRemoveFromPortfolio}
             onUpdateItemInvestment={handleUpdateWeeklyInvestment}
           />
-          <div className="mt-8"> 
+          <div className="mt-8">
             <AllocationPieChart analysisResult={analysisResult} isLoading={isAnalyzing} />
           </div>
         </>

@@ -1,4 +1,2 @@
-import { config } from 'dotenv';
-config();
-
-import '@/ai/flows/analyze-portfolio-allocation.ts';
+// This file is no longer used as Genkit related functionalities have been removed.
+// You can safely delete this file.

@@ -20,22 +20,23 @@ export interface MutualFund {
 }
 
 export interface PortfolioItem extends MutualFund {
-  weeklyInvestment: number; 
+  weeklyInvestment: number;
 }
 
+// This type is used for the result of the portfolio analysis
 export interface AnalysisResult {
   largeCapPercentage: number;
   midCapPercentage: number;
   smallCapPercentage: number;
 }
 
-// Type for the structure of the GenAI flow input
+// Type for the input of the portfolio analysis function
 export type AnalyzePortfolioAllocationInputItem = {
   name: string;
   largeCapHolding: number;
   midCapHolding: number;
   smallCapHolding: number;
-  weeklyInvestment: number; 
+  weeklyInvestment: number;
 };
 
 export type AnalyzePortfolioAllocationInput = {
