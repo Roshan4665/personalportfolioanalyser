@@ -10,6 +10,7 @@ import { AddFundDialog } from '@/components/AddFundDialog';
 import { PortfolioManager } from '@/components/PortfolioManager';
 import { AllocationPieChart } from '@/components/AllocationPieChart';
 import { PortfolioSummaryStats } from '@/components/PortfolioSummaryStats';
+import { PortfolioForecastChart } from '@/components/PortfolioForecastChart'; // New import
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +19,7 @@ import { FileText, AlertTriangle, CloudUpload, CloudDownload } from 'lucide-reac
 const CDN_URL_MF_BASE = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mutual_funds.csv';
 const CDN_URL_MF1 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf1.csv';
 const CDN_URL_MF2 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf2.csv';
-const CDN_URL_DEFAULT_PORTFOLIO_FALLBACK = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/my_funds.json'; // Fallback if npoint fails
+const CDN_URL_DEFAULT_PORTFOLIO_FALLBACK = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/my_funds.json';
 
 export default function HomePage() {
   const [allMutualFunds, setAllMutualFunds] = React.useState<MutualFund[]>([]);
@@ -32,6 +33,7 @@ export default function HomePage() {
   const [fundDataError, setFundDataError] = React.useState<string | null>(null);
   const [isInitialPortfolioLoadComplete, setIsInitialPortfolioLoadComplete] = React.useState(false);
   const [isSavingPortfolio, setIsSavingPortfolio] = React.useState(false);
+  const [totalWeeklyInvestment, setTotalWeeklyInvestment] = React.useState<number>(0); // New state for total weekly investment
   const { toast } = useToast();
 
   React.useEffect(() => {
@@ -52,17 +54,16 @@ export default function HomePage() {
         if (remotePortfolioResult && 'error' in remotePortfolioResult) {
           toast({ title: "Remote Load Failed", description: `Could not load from npoint.io: ${remotePortfolioResult.error}. Falling back to default portfolio from CDN.`, variant: "destructive" });
         } else {
-          toast({ title: "Empty Remote Portfolio", description: `No portfolio found at npoint.io or it's malformed. Loading default portfolio from CDN: ${CDN_URL_DEFAULT_PORTFOLIO_FALLBACK}.`, variant: "default" });
+          toast({ title: "Empty Remote Portfolio", description: `No portfolio found at npoint.io or it's malformed. Loading default portfolio from CDN.`, variant: "default" });
         }
         
-        const defaultPortfolioResult = await getDefaultPortfolio(); // Fetches from jsdelivr CDN
+        const defaultPortfolioResult = await getDefaultPortfolio();
         if (defaultPortfolioResult && !('error' in defaultPortfolioResult)) {
           loadedPortfolio = defaultPortfolioResult;
           toast({
             title: "Default Portfolio Loaded",
             description: `Loaded ${defaultPortfolioResult.length} funds from CDN. Attempting to save this as your remote portfolio.`,
           });
-          // Attempt to save this default to npoint.io immediately
           setIsSavingPortfolio(true);
           const saveResult = await saveRemotePortfolio(defaultPortfolioResult);
           setIsSavingPortfolio(false);
@@ -87,10 +88,9 @@ export default function HomePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
-  // Save portfolio to npoint.io whenever it changes AFTER initial load
   React.useEffect(() => {
     const persistPortfolio = async () => {
-      if (isInitialPortfolioLoadComplete && !isLoadingFundData) { // Only save after initial load and fund data load
+      if (isInitialPortfolioLoadComplete && !isLoadingFundData && portfolio.length > 0) { 
         setIsSavingPortfolio(true);
         toast({ title: "Saving Portfolio...", description: "Syncing your portfolio with npoint.io.", icon: <CloudUpload className="h-5 w-5 animate-pulse" /> });
         const result = await saveRemotePortfolio(portfolio);
@@ -105,7 +105,7 @@ export default function HomePage() {
 
     const timerId = setTimeout(() => {
       persistPortfolio();
-    }, 1500); // Debounce saving by 1.5 seconds
+    }, 1500); 
 
     return () => clearTimeout(timerId);
 
@@ -131,8 +131,6 @@ export default function HomePage() {
             title: "Fund Data Loaded",
             description: `Successfully loaded and merged data for ${result.length} funds from CDN.`,
           });
-          // Enrich portfolio items with potentially new data from allMutualFunds
-          // This should happen AFTER portfolio is loaded
           setPortfolio(prevPortfolio => 
             prevPortfolio.map(pItem => {
               const fullFundData = result.find(mf => mf.name === pItem.name || mf.id === pItem.id);
@@ -205,8 +203,9 @@ export default function HomePage() {
   };
 
   React.useEffect(() => {
+    let currentTotalWeeklyInvestment = 0;
     if (portfolio.length > 0) {
-      let totalPortfolioInvestment = 0; 
+      let totalPortfolioInvestmentForExpense = 0; 
       let totalWeightedExpense = 0;
       let fundsWithExpenseRatioCount = 0;
 
@@ -214,26 +213,29 @@ export default function HomePage() {
       let totalWeightedCagr3y = 0;
 
       portfolio.forEach(fund => {
-        totalPortfolioInvestment += fund.weeklyInvestment;
+        currentTotalWeeklyInvestment += fund.weeklyInvestment;
 
         if (typeof fund.expenseRatio === 'number') {
           totalWeightedExpense += fund.expenseRatio * fund.weeklyInvestment;
+          totalPortfolioInvestmentForExpense += fund.weeklyInvestment; // sum investments of funds that have expense ratio
           fundsWithExpenseRatioCount++;
         }
         
-        if (typeof fund.cagr3y === 'number' && fund.cagr3y > 0) {
+        if (typeof fund.cagr3y === 'number' && fund.cagr3y > 0) { // Only include if cagr3y is positive
           totalWeightedCagr3y += fund.cagr3y * fund.weeklyInvestment;
           totalInvestmentForCagr3y += fund.weeklyInvestment;
         }
       });
 
       setPortfolioAggStats({
-        weightedAverageExpenseRatio: totalPortfolioInvestment > 0 && fundsWithExpenseRatioCount > 0 ? totalWeightedExpense / totalPortfolioInvestment : null,
+        weightedAverageExpenseRatio: totalPortfolioInvestmentForExpense > 0 && fundsWithExpenseRatioCount > 0 ? totalWeightedExpense / totalPortfolioInvestmentForExpense : null,
         weightedAverageCagr3y: totalInvestmentForCagr3y > 0 ? totalWeightedCagr3y / totalInvestmentForCagr3y : null,
       });
+      setTotalWeeklyInvestment(currentTotalWeeklyInvestment);
 
     } else {
       setPortfolioAggStats(null);
+      setTotalWeeklyInvestment(0);
     }
   }, [portfolio]);
 
@@ -272,7 +274,7 @@ export default function HomePage() {
     }
   }, [portfolio, toast, isInitialPortfolioLoadComplete]);
 
-  const cdnSourcesMessage = `Fund data is loaded from CDN sources: ${CDN_URL_MF_BASE}, ${CDN_URL_MF1}, and ${CDN_URL_MF2}.`;
+  const cdnSourcesMessage = `Fund data loaded from CDN. `;
 
   return (
     <div className="container mx-auto p-4 md:p-8 space-y-8 font-body">
@@ -328,8 +330,12 @@ export default function HomePage() {
                 onUpdateItemInvestment={handleUpdateWeeklyInvestment}
                 isSaving={isSavingPortfolio}
               />
-              <div className="mt-8">
+              <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <AllocationPieChart analysisResult={assetAllocationResult} isLoading={isAnalyzing} />
+                <PortfolioForecastChart 
+                  totalWeeklyInvestment={totalWeeklyInvestment} 
+                  annualCagr={portfolioAggStats?.weightedAverageCagr3y ?? null} 
+                />
               </div>
             </>
           )}
@@ -384,4 +390,3 @@ export default function HomePage() {
     </div>
   );
 }
-
