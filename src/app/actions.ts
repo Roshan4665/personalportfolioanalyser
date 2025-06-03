@@ -14,9 +14,9 @@ import type { PortfolioItem } from '@/types';
 
 export async function getLocalCsvContent(): Promise<string | { error: string }> {
   try {
-    const filePath = path.join(process.cwd(), 'data', 'mutual_funds.csv');
+    const filePath = path.join(process.cwd(), 'src', 'data', 'mutual_funds.csv');
     if (!fs.existsSync(filePath)) {
-      return { error: 'CSV file not found at data/mutual_funds.csv. Please create the file and add your data.' };
+      return { error: 'CSV file not found at src/data/mutual_funds.csv. Please create the file and add your data.' };
     }
     const fileContent = fs.readFileSync(filePath, 'utf-8');
     return fileContent;
@@ -31,15 +31,15 @@ export async function getLocalCsvContent(): Promise<string | { error: string }> 
 
 export async function getDefaultPortfolio(): Promise<PortfolioItem[] | { error: string }> {
   try {
-    const filePath = path.join(process.cwd(), 'data', 'my_funds.json');
+    const filePath = path.join(process.cwd(), 'src', 'data', 'my_funds.json');
     if (!fs.existsSync(filePath)) {
-      return { error: 'Default portfolio file (data/my_funds.json) not found.' };
+      return { error: 'Default portfolio file (src/data/my_funds.json) not found.' };
     }
     const fileContent = fs.readFileSync(filePath, 'utf-8');
     const portfolioData: PortfolioItem[] = JSON.parse(fileContent);
     // Basic validation
     if (!Array.isArray(portfolioData) || !portfolioData.every(item => item.id && typeof item.weeklyInvestment === 'number' && item.name)) {
-        return { error: 'Default portfolio file (data/my_funds.json) is not in the expected format.' };
+        return { error: 'Default portfolio file (src/data/my_funds.json) is not in the expected format.' };
     }
     return portfolioData;
   } catch (error) {
@@ -50,3 +50,4 @@ export async function getDefaultPortfolio(): Promise<PortfolioItem[] | { error: 
     return { error: 'An unknown error occurred while loading the default portfolio.' };
   }
 }
+
