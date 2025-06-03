@@ -3,23 +3,23 @@
 
 import * as React from 'react';
 import { analyzePortfolioAllocation } from '@/ai/flows/analyze-portfolio-allocation';
-import type { MutualFund, PortfolioItem, AnalysisResult, AnalyzePortfolioAllocationInput } from '@/types';
-import { parseCsvData } from '@/lib/csvParser';
-import { getLocalCsvContent, getDefaultPortfolio } from '@/app/actions';
+import type { MutualFund, PortfolioItem, AnalysisResult, AnalyzePortfolioAllocationInput, PortfolioAggregateStats } from '@/types';
+// Removed parseCsvData import as it's used in actions.ts now
+import { fetchAndProcessFundData, getDefaultPortfolio } from '@/app/actions';
 import { FundSearch } from '@/components/FundSearch';
 import { AddFundDialog } from '@/components/AddFundDialog';
 import { PortfolioManager } from '@/components/PortfolioManager';
 import { AllocationPieChart } from '@/components/AllocationPieChart';
+import { PortfolioSummaryStats } from '@/components/PortfolioSummaryStats'; // New component
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-// Button and Input are not directly used here anymore but might be used by child components if not removed elsewhere
-// import { Button } from '@/components/ui/button';
-// import { Input } from '@/components/ui/input';
 import { useToast } from "@/hooks/use-toast";
-import { FileText } from 'lucide-react';
+import { FileText, AlertTriangle } from 'lucide-react';
 
-const LOCAL_STORAGE_PORTFOLIO_KEY = 'fundFolioPortfolio';
-const CDN_URL_CSV = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mutual_funds.csv';
+const LOCAL_STORAGE_PORTFOLIO_KEY = 'fundFolioPortfolio_v2'; // Changed key to avoid conflicts with old structure potentially
+const CDN_URL_MF_BASE = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mutual_funds.csv';
+const CDN_URL_MF1 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf1.csv';
+const CDN_URL_MF2 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf2.csv';
 const CDN_URL_DEFAULT_PORTFOLIO = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/my_funds.json';
 
 
@@ -28,9 +28,11 @@ export default function HomePage() {
   const [portfolio, setPortfolio] = React.useState<PortfolioItem[]>([]);
   const [selectedFundForDialog, setSelectedFundForDialog] = React.useState<MutualFund | null>(null);
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
-  const [analysisResult, setAnalysisResult] = React.useState<AnalysisResult | null>(null);
+  const [assetAllocationResult, setAssetAllocationResult] = React.useState<AnalysisResult | null>(null);
+  const [portfolioAggStats, setPortfolioAggStats] = React.useState<PortfolioAggregateStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = React.useState(false);
-  const [isLoadingCsv, setIsLoadingCsv] = React.useState(true);
+  const [isLoadingFundData, setIsLoadingFundData] = React.useState(true);
+  const [fundDataError, setFundDataError] = React.useState<string | null>(null);
   const { toast } = useToast();
 
   React.useEffect(() => {
@@ -42,7 +44,8 @@ export default function HomePage() {
         if (storedPortfolioJson) {
           try {
             const parsedPortfolio: PortfolioItem[] = JSON.parse(storedPortfolioJson);
-            if (Array.isArray(parsedPortfolio) && parsedPortfolio.every(item => item.id && typeof item.weeklyInvestment === 'number')) {
+            // Basic validation: check if it's an array and items have id, weeklyInvestment, and name
+            if (Array.isArray(parsedPortfolio) && parsedPortfolio.every(item => item.id && typeof item.weeklyInvestment === 'number' && item.name)) {
               loadedPortfolio = parsedPortfolio;
             } else {
               console.warn("Malformed portfolio data in local storage, attempting to load default from CDN.");
@@ -50,7 +53,7 @@ export default function HomePage() {
             }
           } catch (error) {
             console.error("Error parsing portfolio from local storage:", error);
-            localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); // Clear corrupted data
           }
         }
 
@@ -58,16 +61,17 @@ export default function HomePage() {
           setPortfolio(loadedPortfolio);
           toast({
             title: "Portfolio Loaded",
-            description: "Your portfolio has been loaded from previous session.",
+            description: "Your portfolio has been loaded from the previous session.",
           });
         } else {
           toast({
             title: "Loading Default Portfolio",
-            description: `No local portfolio found, attempting to load default funds from CDN: ${CDN_URL_DEFAULT_PORTFOLIO}.`,
+            description: `No local portfolio found or data was malformed. Attempting to load default funds from CDN: ${CDN_URL_DEFAULT_PORTFOLIO}.`,
           });
           const defaultPortfolioResult = await getDefaultPortfolio();
           if (defaultPortfolioResult && !('error' in defaultPortfolioResult)) {
             setPortfolio(defaultPortfolioResult);
+            // Default portfolio might not have all enriched data, it will be enriched when allMutualFunds are loaded
             localStorage.setItem(LOCAL_STORAGE_PORTFOLIO_KEY, JSON.stringify(defaultPortfolioResult));
             toast({
               title: "Default Portfolio Loaded",
@@ -79,7 +83,7 @@ export default function HomePage() {
               description: defaultPortfolioResult?.error || "Could not load default funds from CDN.",
               variant: "destructive",
             });
-            setPortfolio([]);
+            setPortfolio([]); // Ensure portfolio is empty if default load fails
           }
         }
       } catch (error) {
@@ -94,9 +98,11 @@ export default function HomePage() {
     };
     loadInitialPortfolio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]);
+  }, [toast]); // Keep toast dependency
 
+  // Save portfolio to local storage whenever it changes
   React.useEffect(() => {
+    // Only save if portfolio has items or if there was something previously in local storage (to clear it if it becomes empty)
     if (typeof window !== 'undefined' && (portfolio.length > 0 || localStorage.getItem(LOCAL_STORAGE_PORTFOLIO_KEY))) {
         localStorage.setItem(LOCAL_STORAGE_PORTFOLIO_KEY, JSON.stringify(portfolio));
     }
@@ -104,45 +110,45 @@ export default function HomePage() {
 
 
   React.useEffect(() => {
-    const loadData = async () => {
-      setIsLoadingCsv(true);
-      const result = await getLocalCsvContent();
-      if (typeof result === 'string') {
-        try {
-          const funds = parseCsvData(result);
-          setAllMutualFunds(funds);
-          if (funds.length === 0 && result.trim() !== "") {
-            toast({
-              title: "CDN CSV Parsing Issue",
-              description: `No valid fund data found in CSV from CDN: ${CDN_URL_CSV}. Please check its format and content.`,
-              variant: "destructive",
-            });
-          } else if (funds.length > 0) {
-             toast({
-              title: "Fund Data Loaded",
-              description: `Successfully loaded ${funds.length} funds from CDN CSV.`,
-            });
-          }
-        } catch (error) {
-          console.error("Error parsing CDN CSV data:", error);
+    const loadAllFundData = async () => {
+      setIsLoadingFundData(true);
+      setFundDataError(null);
+      const result = await fetchAndProcessFundData();
+      if (result && !('error' in result)) {
+        setAllMutualFunds(result);
+        if (result.length === 0) {
           toast({
-            title: "CDN CSV Parsing Error",
-            description: `Failed to parse CSV from CDN: ${CDN_URL_CSV}. Please ensure it's correctly formatted.`,
+            title: "No Fund Data",
+            description: `No fund data could be loaded from CDN sources. The app might not function as expected.`,
             variant: "destructive",
           });
-          setAllMutualFunds([]);
+          setFundDataError("No fund data could be loaded from any CDN source.");
+        } else {
+           toast({
+            title: "Fund Data Loaded",
+            description: `Successfully loaded and merged data for ${result.length} funds from CDN.`,
+          });
+          // Enrich portfolio items with potentially new data from allMutualFunds
+          setPortfolio(prevPortfolio => 
+            prevPortfolio.map(pItem => {
+              const fullFundData = result.find(mf => mf.name === pItem.name || mf.id === pItem.id); // Match by name or id
+              return fullFundData ? { ...fullFundData, weeklyInvestment: pItem.weeklyInvestment } : pItem;
+            })
+          );
         }
       } else {
+        const errorMsg = result?.error || "An unknown error occurred while fetching fund data.";
         toast({
-          title: "Error Loading CDN CSV",
-          description: result.error,
+          title: "Error Loading Fund Data",
+          description: errorMsg,
           variant: "destructive",
         });
+        setFundDataError(errorMsg);
         setAllMutualFunds([]);
       }
-      setIsLoadingCsv(false);
+      setIsLoadingFundData(false);
     };
-    loadData();
+    loadAllFundData();
   }, [toast]);
 
   const handleOpenAddDialog = (fund: MutualFund) => {
@@ -159,10 +165,14 @@ export default function HomePage() {
       });
       return;
     }
-    setPortfolio(prev => [...prev, { ...fund, weeklyInvestment }]);
+    // Ensure the fund object added to portfolio has all fields from allMutualFunds
+    const fullFundData = allMutualFunds.find(mf => mf.id === fund.id);
+    const itemToAdd = fullFundData ? { ...fullFundData, weeklyInvestment } : { ...fund, weeklyInvestment };
+
+    setPortfolio(prev => [...prev, itemToAdd]);
     toast({
       title: "Fund Added",
-      description: `${fund.name} added to your portfolio with ₹${weeklyInvestment.toLocaleString()} weekly investment.`,
+      description: `${fund.name} added with ₹${weeklyInvestment.toLocaleString()} weekly.`,
     });
   };
 
@@ -191,6 +201,37 @@ export default function HomePage() {
     }
   };
 
+  // Calculate Aggregate Portfolio Stats
+  React.useEffect(() => {
+    if (portfolio.length > 0) {
+      let totalInvestment = 0;
+      let totalWeightedExpense = 0;
+      let totalWeightedCagr3y = 0;
+      let fundsWithExpenseRatio = 0;
+      let fundsWithCagr3y = 0;
+
+      portfolio.forEach(fund => {
+        totalInvestment += fund.weeklyInvestment;
+        if (typeof fund.expenseRatio === 'number') {
+          totalWeightedExpense += fund.expenseRatio * fund.weeklyInvestment;
+          fundsWithExpenseRatio++;
+        }
+        if (typeof fund.cagr3y === 'number') {
+          totalWeightedCagr3y += fund.cagr3y * fund.weeklyInvestment;
+          fundsWithCagr3y++;
+        }
+      });
+
+      setPortfolioAggStats({
+        weightedAverageExpenseRatio: totalInvestment > 0 && fundsWithExpenseRatio > 0 ? totalWeightedExpense / totalInvestment : null,
+        weightedAverageCagr3y: totalInvestment > 0 && fundsWithCagr3y > 0 ? totalWeightedCagr3y / totalInvestment : null,
+      });
+
+    } else {
+      setPortfolioAggStats(null);
+    }
+  }, [portfolio]);
+
 
   React.useEffect(() => {
     if (portfolio.length > 0) {
@@ -207,24 +248,26 @@ export default function HomePage() {
             })),
           };
           const result = await analyzePortfolioAllocation(analysisInput);
-          setAnalysisResult(result);
+          setAssetAllocationResult(result);
         } catch (error) {
-          console.error("Error analyzing portfolio:", error);
+          console.error("Error analyzing portfolio asset allocation:", error);
           toast({
-            title: "Analysis Error",
-            description: "Could not analyze portfolio. Please try again later.",
+            title: "Asset Allocation Analysis Error",
+            description: "Could not analyze portfolio asset allocation.",
             variant: "destructive",
           });
-          setAnalysisResult(null);
+          setAssetAllocationResult(null);
         } finally {
           setIsAnalyzing(false);
         }
       };
       runAnalysis();
     } else {
-      setAnalysisResult(null);
+      setAssetAllocationResult(null); // Clear analysis if portfolio is empty
     }
   }, [portfolio, toast]);
+
+  const cdnSourcesMessage = `Fund data is loaded from CDN sources: ${CDN_URL_MF_BASE}, ${CDN_URL_MF1}, and ${CDN_URL_MF2}.`;
 
   return (
     <div className="container mx-auto p-4 md:p-8 space-y-8 font-body">
@@ -234,64 +277,92 @@ export default function HomePage() {
             FundFolio Analyzer
           </h1>
           <p className="text-lg text-muted-foreground mt-2">
-            Your mutual fund data is loaded from <code className="bg-muted px-1 py-0.5 rounded break-all">{CDN_URL_CSV}</code>. Build your portfolio and gain insights.
+            {cdnSourcesMessage} Build your portfolio and gain insights.
           </p>
         </div>
       </header>
 
-      {isLoadingCsv && (
+      {isLoadingFundData && (
         <Card className="shadow-md">
           <CardContent className="py-16 flex flex-col items-center justify-center text-center">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-t-transparent mb-6"></div>
-            <h3 className="font-headline text-xl text-primary mb-2">Loading Fund Data...</h3>
-            <p className="text-muted-foreground">Reading from <code className="bg-muted px-1 py-0.5 rounded break-all">{CDN_URL_CSV}</code>.</p>
+            <h3 className="font-headline text-xl text-primary mb-2">Loading All Fund Data...</h3>
+            <p className="text-muted-foreground max-w-md">Fetching and merging data from CDN sources. This may take a moment.</p>
           </CardContent>
         </Card>
       )}
 
-      {!isLoadingCsv && allMutualFunds.length === 0 && (
-        <Card className="shadow-md">
-          <CardContent className="py-16 flex flex-col items-center justify-center text-center">
-            <FileText className="w-24 h-24 text-muted-foreground mb-6" />
-            <h3 className="font-headline text-xl text-primary mb-2">No Fund Data Loaded</h3>
-            <p className="text-muted-foreground">
-              Could not load data from <code className="bg-muted px-1 py-0.5 rounded break-all">{CDN_URL_CSV}</code>.
-              <br />
-              Please ensure the URL is accessible and the file is correctly formatted.
+      {!isLoadingFundData && fundDataError && (
+        <Card className="shadow-md border-destructive">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2" /> Fund Data Load Failed</CardTitle>
+          </CardHeader>
+          <CardContent className="py-8 flex flex-col items-center justify-center text-center">
+            <FileText className="w-20 h-20 text-destructive/70 mb-4" />
+            <p className="text-destructive/90">
+              Could not load essential fund data from CDN sources.
             </p>
+            <p className="text-sm text-muted-foreground mt-1">{fundDataError}</p>
+            <p className="text-sm text-muted-foreground mt-2">Please check your internet connection and ensure the CDN URLs are accessible. The application functionality will be limited.</p>
           </CardContent>
         </Card>
       )}
       
-      {(portfolio.length > 0 || allMutualFunds.length > 0) && (
+      {!isLoadingFundData && !fundDataError && (
         <>
-          <PortfolioManager
-            portfolioItems={portfolio}
-            onRemoveItem={handleRemoveFromPortfolio}
-            onUpdateItemInvestment={handleUpdateWeeklyInvestment}
-          />
-          <div className="mt-8">
-            <AllocationPieChart analysisResult={analysisResult} isLoading={isAnalyzing} />
-          </div>
+          {portfolio.length > 0 && (
+            <>
+              <PortfolioSummaryStats stats={portfolioAggStats} />
+              <PortfolioManager
+                portfolioItems={portfolio}
+                onRemoveItem={handleRemoveFromPortfolio}
+                onUpdateItemInvestment={handleUpdateWeeklyInvestment}
+              />
+              <div className="mt-8">
+                <AllocationPieChart analysisResult={assetAllocationResult} isLoading={isAnalyzing} />
+              </div>
+            </>
+          )}
+
+          {portfolio.length === 0 && allMutualFunds.length > 0 && (
+             <Card className="shadow-md">
+                <CardContent className="py-16 flex flex-col items-center justify-center text-center">
+                    <h3 className="font-headline text-xl text-primary mb-2">Your Portfolio is Empty</h3>
+                    <p className="text-muted-foreground">Search for funds below and add them to start analyzing.</p>
+                </CardContent>
+            </Card>
+          )}
+        
+          {allMutualFunds.length > 0 && (
+            <>
+              <Separator className="my-8" />
+              <Card className="shadow-md">
+                 <CardHeader>
+                    <CardTitle className="font-headline text-2xl text-primary">Search & Add Funds</CardTitle>
+                    <CardDescription>Find funds from the loaded CDN data and add them to your portfolio.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FundSearch
+                    allFunds={allMutualFunds}
+                    onAddToPortfolio={handleOpenAddDialog}
+                  />
+                </CardContent>
+              </Card>
+            </>
+          )}
         </>
       )}
-      
-      {allMutualFunds.length > 0 && (
-        <>
-          <Separator className="my-8" />
-          <Card className="shadow-md">
-             <CardHeader>
-                <CardTitle className="font-headline text-2xl text-primary">Search & Add Funds</CardTitle>
-                <CardDescription>Find funds from the loaded CDN data and add them to your portfolio.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FundSearch
-                allFunds={allMutualFunds}
-                onAddToPortfolio={handleOpenAddDialog}
-              />
-            </CardContent>
-          </Card>
-        </>
+
+      {!isLoadingFundData && allMutualFunds.length === 0 && !fundDataError && (
+         <Card className="shadow-md">
+          <CardContent className="py-16 flex flex-col items-center justify-center text-center">
+            <FileText className="w-24 h-24 text-muted-foreground mb-6" />
+            <h3 className="font-headline text-xl text-primary mb-2">No Fund Data Available</h3>
+            <p className="text-muted-foreground">
+              Successfully connected to CDN, but no fund data was returned or data was malformed.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       <AddFundDialog

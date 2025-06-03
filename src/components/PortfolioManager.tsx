@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Trash2, ArrowUpDown, ArrowUp, ArrowDown, Edit3, Check, X } from 'lucide-react';
+import { Trash2, ArrowUpDown, ArrowUp, ArrowDown, Edit3 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 
 interface AugmentedPortfolioItem extends PortfolioItem {
@@ -27,7 +27,15 @@ interface AugmentedPortfolioItem extends PortfolioItem {
   absoluteSmallCap: number;
 }
 
-type SortKey = keyof AugmentedPortfolioItem | 'name' | 'weeklyInvestment' | 'overallContributionPercent' | 'contributionToOverallLargeCapPercent' | 'contributionToOverallMidCapPercent' | 'contributionToOverallSmallCapPercent';
+type SortableKeys = 
+  | 'name' 
+  | 'weeklyInvestment' 
+  | 'overallContributionPercent' 
+  | 'contributionToOverallLargeCapPercent' 
+  | 'contributionToOverallMidCapPercent' 
+  | 'contributionToOverallSmallCapPercent'
+  | 'expenseRatio'
+  | 'cagr3y';
 
 interface PortfolioManagerProps {
   portfolioItems: PortfolioItem[];
@@ -36,7 +44,7 @@ interface PortfolioManagerProps {
 }
 
 export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInvestment }: PortfolioManagerProps) {
-  const [sortConfig, setSortConfig] = React.useState<{ key: SortKey | null; direction: 'ascending' | 'descending' }>({ key: 'weeklyInvestment', direction: 'descending' });
+  const [sortConfig, setSortConfig] = React.useState<{ key: SortableKeys | null; direction: 'ascending' | 'descending' }>({ key: 'weeklyInvestment', direction: 'descending' });
   const [editingFundId, setEditingFundId] = React.useState<string | null>(null);
   const [editValue, setEditValue] = React.useState<string>('');
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -65,8 +73,6 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
         description: "Please enter a valid non-negative number for the investment.",
         variant: "destructive",
       });
-      // Optionally, revert editValue to original or keep input open
-      // For now, we just close editing mode without saving
       setEditingFundId(null);
       return;
     }
@@ -123,10 +129,14 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
       sortableItems.sort((a, b) => {
         const valA = a[sortConfig.key as keyof AugmentedPortfolioItem];
         const valB = b[sortConfig.key as keyof AugmentedPortfolioItem];
-
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
+        
+        // Handle null or undefined for numeric sort gracefully, sorting them to the bottom or top
+        if (typeof valA === 'number' || typeof valB === 'number') {
+            const numA = typeof valA === 'number' ? valA : (sortConfig.direction === 'ascending' ? Infinity : -Infinity);
+            const numB = typeof valB === 'number' ? valB : (sortConfig.direction === 'ascending' ? Infinity : -Infinity);
+            return sortConfig.direction === 'ascending' ? numA - numB : numB - numA;
         }
+
         if (typeof valA === 'string' && typeof valB === 'string') {
           return sortConfig.direction === 'ascending' ? valA.localeCompare(valB) : valB.localeCompare(valA);
         }
@@ -136,7 +146,7 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
     return sortableItems;
   }, [augmentedPortfolioItems, sortConfig]);
 
-  const requestSort = (key: SortKey) => {
+  const requestSort = (key: SortableKeys) => {
     let direction: 'ascending' | 'descending' = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
       direction = 'descending';
@@ -144,17 +154,19 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
     setSortConfig({ key, direction });
   };
 
-  const getSortIcon = (key: SortKey) => {
+  const getSortIcon = (key: SortableKeys) => {
     if (sortConfig.key !== key) {
       return <ArrowUpDown className="ml-2 h-3 w-3 opacity-50" />;
     }
     return sortConfig.direction === 'ascending' ? <ArrowUp className="ml-2 h-3 w-3" /> : <ArrowDown className="ml-2 h-3 w-3" />;
   };
 
-  const columns: { key: SortKey; label: string; className?: string, isNumeric?: boolean }[] = [
+  const columns: { key: SortableKeys; label: string; className?: string, isNumeric?: boolean }[] = [
     { key: 'name', label: 'Fund Name', className: "sticky left-0 bg-card z-10 w-[250px] min-w-[250px]" },
     { key: 'weeklyInvestment', label: 'Weekly Inv. (₹)', className: "text-right", isNumeric: true },
     { key: 'overallContributionPercent', label: 'Portfolio %', className: "text-right", isNumeric: true },
+    { key: 'expenseRatio', label: 'Exp. Ratio (%)', className: "text-right", isNumeric: true },
+    { key: 'cagr3y', label: 'CAGR 3Y (%)', className: "text-right", isNumeric: true },
     { key: 'contributionToOverallLargeCapPercent', label: 'LC Contrib. %', className: "text-right", isNumeric: true },
     { key: 'contributionToOverallMidCapPercent', label: 'MC Contrib. %', className: "text-right", isNumeric: true },
     { key: 'contributionToOverallSmallCapPercent', label: 'SC Contrib. %', className: "text-right", isNumeric: true },
@@ -163,7 +175,7 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle className="font-headline text-2xl text-primary">Your Portfolio</CardTitle>
+        <CardTitle className="font-headline text-2xl text-primary">Your Portfolio Details</CardTitle>
         {portfolioItems.length > 0 && (
             <CardDescription>
             Total Weekly Investment: <span className="font-bold text-foreground">₹{totalWeeklyInvestment.toLocaleString()}</span>
@@ -196,7 +208,7 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
               <TableBody>
                 {sortedItems.map(item => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium sticky left-0 bg-card z-10 w-[250px] min-w-[250px]">{item.name}</TableCell>
+                    <TableCell className="font-medium sticky left-0 bg-card z-10 w-[250px] min-w-[250px] truncate" title={item.name}>{item.name}</TableCell>
                     <TableCell className="text-right" onClick={() => { if(editingFundId !== item.id) handleEditClick(item)}}>
                       {editingFundId === item.id ? (
                         <div className="flex items-center justify-end gap-1">
@@ -206,10 +218,9 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
                             value={editValue}
                             onChange={handleInputChange}
                             onKeyDown={handleInputKeyDown}
-                            onBlur={handleSaveEdit} // Save on blur
+                            onBlur={handleSaveEdit} 
                             className="h-8 w-24 text-right"
                           />
-                          {/* Save and Cancel buttons could be added here for more explicit control if desired */}
                         </div>
                       ) : (
                         <>
@@ -221,6 +232,8 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
                       )}
                     </TableCell>
                     <TableCell className="text-right">{item.overallContributionPercent.toFixed(2)}%</TableCell>
+                    <TableCell className="text-right">{typeof item.expenseRatio === 'number' ? `${item.expenseRatio.toFixed(2)}%` : 'N/A'}</TableCell>
+                    <TableCell className="text-right">{typeof item.cagr3y === 'number' ? `${item.cagr3y.toFixed(2)}%` : 'N/A'}</TableCell>
                     <TableCell className="text-right">{item.contributionToOverallLargeCapPercent.toFixed(2)}%</TableCell>
                     <TableCell className="text-right">{item.contributionToOverallMidCapPercent.toFixed(2)}%</TableCell>
                     <TableCell className="text-right">{item.contributionToOverallSmallCapPercent.toFixed(2)}%</TableCell>

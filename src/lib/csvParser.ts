@@ -1,10 +1,16 @@
+
 import type { MutualFund } from '@/types';
 
 export const normalizeCsvKey = (header: string): string => {
   let key = header.trim();
+  // Handle cases like "3Y Avg Annual Rolling Return " -> "3yAvgAnnualRollingReturn"
+  // or "CAGR 3Y" -> "cagr3y"
+  key = key.replace(/\b(\d+Y)\b/g, (match) => match.toLowerCase()); // 3Y -> 3y
+
   if (key.startsWith('%')) {
     key = 'percent' + key.substring(1);
   }
+  
   return key
     .toLowerCase()
     .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special chars except space
@@ -43,34 +49,47 @@ const parseCsvLine = (line: string): string[] => {
 };
 
 
-export const parseCsvData = (csvText: string): MutualFund[] => {
+export const parseCsvData = (csvText: string): Omit<MutualFund, 'id'>[] => {
   const lines = csvText.trim().split(/\r?\n/); // Handles Windows and Unix line endings
   if (lines.length < 2) return [];
 
   const rawHeaders = parseCsvLine(lines[0]);
   const camelCaseHeaders = rawHeaders.map(normalizeCsvKey);
 
-  return lines.slice(1).map((line, index) => {
+  return lines.slice(1).map((line) => {
     if (!line.trim()) return null; // Skip empty lines
     
     const values = parseCsvLine(line);
-    const fund: any = { id: `fund-${Date.now()}-${index}` };
+    const fund: any = {}; // ID will be assigned after merging
 
     camelCaseHeaders.forEach((header, i) => {
       if (values[i] === undefined) { // Handle rows with fewer columns than headers
         fund[header] = null;
         return;
       }
-      const value = values[i];
+      let value = values[i];
+
+      // Attempt to strip percentage signs and convert to number
+      if (typeof value === 'string' && value.endsWith('%')) {
+        const numPart = value.substring(0, value.length - 1);
+        const possibleNum = parseFloat(numPart);
+        if (!isNaN(possibleNum) && isFinite(possibleNum)) {
+          value = String(possibleNum); // Keep as string for generic parsing, will be parsed to float next
+        }
+      }
+      
       const numValue = parseFloat(value);
-      if (value === "" || value === null || value === undefined) {
+
+      if (value === "" || value === null || value === undefined || value.toLowerCase() === 'n.a.' || value.toLowerCase() === 'na') {
         fund[header] = null;
-      } else if (!isNaN(numValue) && isFinite(numValue) && value.trim() === String(numValue)) {
+      } else if (!isNaN(numValue) && isFinite(numValue) && String(value).trim() === String(numValue)) {
+         // Check if the original string value (after potential % stripping) is purely numeric
         fund[header] = numValue;
-      } else {
+      }
+       else {
         fund[header] = value;
       }
     });
-    return fund as MutualFund;
-  }).filter(fund => fund !== null) as MutualFund[];
+    return fund as Omit<MutualFund, 'id'>;
+  }).filter(fund => fund !== null && fund.name) as Omit<MutualFund, 'id'>[]; // Ensure fund is not null and has a name
 };
