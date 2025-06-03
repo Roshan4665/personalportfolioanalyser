@@ -206,27 +206,30 @@ export default function HomePage() {
 
   React.useEffect(() => {
     if (portfolio.length > 0) {
-      let totalInvestment = 0;
+      let totalPortfolioInvestment = 0; 
       let totalWeightedExpense = 0;
+      let fundsWithExpenseRatioCount = 0;
+
+      let totalInvestmentForCagr3y = 0; 
       let totalWeightedCagr3y = 0;
-      let fundsWithExpenseRatio = 0;
-      let fundsWithCagr3y = 0;
 
       portfolio.forEach(fund => {
-        totalInvestment += fund.weeklyInvestment;
+        totalPortfolioInvestment += fund.weeklyInvestment;
+
         if (typeof fund.expenseRatio === 'number') {
           totalWeightedExpense += fund.expenseRatio * fund.weeklyInvestment;
-          fundsWithExpenseRatio++;
+          fundsWithExpenseRatioCount++;
         }
-        if (typeof fund.cagr3y === 'number') {
+        
+        if (typeof fund.cagr3y === 'number' && fund.cagr3y > 0) {
           totalWeightedCagr3y += fund.cagr3y * fund.weeklyInvestment;
-          fundsWithCagr3y++;
+          totalInvestmentForCagr3y += fund.weeklyInvestment;
         }
       });
 
       setPortfolioAggStats({
-        weightedAverageExpenseRatio: totalInvestment > 0 && fundsWithExpenseRatio > 0 ? totalWeightedExpense / totalInvestment : null,
-        weightedAverageCagr3y: totalInvestment > 0 && fundsWithCagr3y > 0 ? totalWeightedCagr3y / totalInvestment : null,
+        weightedAverageExpenseRatio: totalPortfolioInvestment > 0 && fundsWithExpenseRatioCount > 0 ? totalWeightedExpense / totalPortfolioInvestment : null,
+        weightedAverageCagr3y: totalInvestmentForCagr3y > 0 ? totalWeightedCagr3y / totalInvestmentForCagr3y : null,
       });
 
     } else {
