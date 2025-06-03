@@ -10,16 +10,13 @@ import { AddFundDialog } from '@/components/AddFundDialog';
 import { PortfolioManager } from '@/components/PortfolioManager';
 import { AllocationPieChart } from '@/components/AllocationPieChart';
 import { PortfolioSummaryStats } from '@/components/PortfolioSummaryStats';
-import { PortfolioForecastChart } from '@/components/PortfolioForecastChart'; // New import
+import { PortfolioForecastChart } from '@/components/PortfolioForecastChart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from "@/hooks/use-toast";
 import { FileText, AlertTriangle, CloudUpload, CloudDownload } from 'lucide-react';
 
-const CDN_URL_MF_BASE = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mutual_funds.csv';
-const CDN_URL_MF1 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf1.csv';
-const CDN_URL_MF2 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf2.csv';
-const CDN_URL_DEFAULT_PORTFOLIO_FALLBACK = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/my_funds.json';
+// CDN URLs are now defined in actions.ts, no need to repeat here.
 
 export default function HomePage() {
   const [allMutualFunds, setAllMutualFunds] = React.useState<MutualFund[]>([]);
@@ -33,7 +30,7 @@ export default function HomePage() {
   const [fundDataError, setFundDataError] = React.useState<string | null>(null);
   const [isInitialPortfolioLoadComplete, setIsInitialPortfolioLoadComplete] = React.useState(false);
   const [isSavingPortfolio, setIsSavingPortfolio] = React.useState(false);
-  const [totalWeeklyInvestment, setTotalWeeklyInvestment] = React.useState<number>(0); // New state for total weekly investment
+  const [totalWeeklyInvestment, setTotalWeeklyInvestment] = React.useState<number>(0);
   const { toast } = useToast();
 
   React.useEffect(() => {
@@ -131,6 +128,7 @@ export default function HomePage() {
             title: "Fund Data Loaded",
             description: `Successfully loaded and merged data for ${result.length} funds from CDN.`,
           });
+          // Re-hydrate portfolio with full fund data if it was loaded before allMutualFunds
           setPortfolio(prevPortfolio => 
             prevPortfolio.map(pItem => {
               const fullFundData = result.find(mf => mf.name === pItem.name || mf.id === pItem.id);
@@ -217,11 +215,11 @@ export default function HomePage() {
 
         if (typeof fund.expenseRatio === 'number') {
           totalWeightedExpense += fund.expenseRatio * fund.weeklyInvestment;
-          totalPortfolioInvestmentForExpense += fund.weeklyInvestment; // sum investments of funds that have expense ratio
+          totalPortfolioInvestmentForExpense += fund.weeklyInvestment; 
           fundsWithExpenseRatioCount++;
         }
         
-        if (typeof fund.cagr3y === 'number' && fund.cagr3y > 0) { // Only include if cagr3y is positive
+        if (typeof fund.cagr3y === 'number' && fund.cagr3y > 0) { 
           totalWeightedCagr3y += fund.cagr3y * fund.weeklyInvestment;
           totalInvestmentForCagr3y += fund.weeklyInvestment;
         }
@@ -390,3 +388,4 @@ export default function HomePage() {
     </div>
   );
 }
+
