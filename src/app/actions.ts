@@ -9,6 +9,8 @@ const CDN_URL_BASE_FUNDS_CSV = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalp
 const CDN_URL_MF1_CSV = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf1.csv';
 const CDN_URL_MF2_CSV = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf2.csv';
 
+const NPOINT_IO_PORTFOLIO_URL = 'https://api.npoint.io/b29ab99c2f1b04fd0fd5';
+
 
 async function fetchAndParseCsv(url: string): Promise<Partial<MutualFund>[] | { error: string }> {
   try {
@@ -18,8 +20,6 @@ async function fetchAndParseCsv(url: string): Promise<Partial<MutualFund>[] | { 
     }
     const fileContent = await response.text();
     if (!fileContent.trim()) {
-      // It's okay for a supplemental CSV to be empty, just return empty array.
-      // For base CSV, an error might be more appropriate if it's critical.
       return []; 
     }
     return parseCsvData(fileContent);
@@ -43,7 +43,7 @@ export async function fetchAndProcessFundData(): Promise<MutualFund[] | { error:
   const mf1DataResult = results[1];
   const mf2DataResult = results[2];
 
-  if ('error' in baseFundsResult && Array.isArray(baseFundsResult) && baseFundsResult.length === 0) { // if base CSV fails and is primary
+  if ('error' in baseFundsResult && Array.isArray(baseFundsResult) && baseFundsResult.length === 0) {
      console.warn("Base funds CSV could not be loaded or is empty. Proceeding with other CSVs if available, but data might be incomplete.");
   }
 
@@ -60,8 +60,6 @@ export async function fetchAndProcessFundData(): Promise<MutualFund[] | { error:
     list.forEach(fund => {
       if (fund.name) {
         const existingFund = fundMap.get(fund.name) || {};
-        // Simple merge: last one wins for conflicting properties.
-        // More sophisticated merging might be needed if properties have different priorities.
         fundMap.set(fund.name, { ...existingFund, ...fund });
       }
     });
@@ -72,10 +70,9 @@ export async function fetchAndProcessFundData(): Promise<MutualFund[] | { error:
   processFundList(mf2DataResult);
   
   let finalFundList: MutualFund[] = Array.from(fundMap.values()).map((fund, index) => {
-    // Ensure all essential fields are present or defaulted, and assign a stable ID
     const nameIdentifier = fund.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || `unknown-${index}`;
     return {
-      id: `fund-${nameIdentifier}-${index}`, // Generate a more stable ID
+      id: `fund-${nameIdentifier}-${index}`,
       name: fund.name || 'Unknown Fund',
       subCategory: fund.subCategory,
       plan: fund.plan,
@@ -106,18 +103,15 @@ export async function fetchAndProcessFundData(): Promise<MutualFund[] | { error:
       returnsVsSubCategory3y: typeof fund.returnsVsSubCategory3y === 'number' ? fund.returnsVsSubCategory3y : undefined,
       percentAwayFromAth: typeof fund.percentAwayFromAth === 'number' ? fund.percentAwayFromAth : undefined,
       trackingError: typeof fund.trackingError === 'number' ? fund.trackingError : undefined,
-      ...fund // Spread any other properties not explicitly listed
+      ...fund 
     } as MutualFund;
   });
   
   if (finalFundList.length === 0 && ('error' in baseFundsResult || 'error' in mf1DataResult || 'error' in mf2DataResult )) {
-    // If all sources failed or yielded no data, and there was an error, return that error.
-    // Pick the first error encountered.
     const firstError = [baseFundsResult, mf1DataResult, mf2DataResult].find(r => 'error' in r);
     if (firstError && 'error' in firstError) return { error: `Failed to load any fund data. First error: ${firstError.error}` };
     return { error: "No fund data could be loaded from any CDN source." };
   }
-
 
   return finalFundList;
 }
@@ -141,5 +135,65 @@ export async function getDefaultPortfolio(): Promise<PortfolioItem[] | { error: 
       return { error: `Failed to load default portfolio from CDN: ${error.message}` };
     }
     return { error: 'An unknown error occurred while loading the default portfolio from CDN.' };
+  }
+}
+
+export async function fetchRemotePortfolio(): Promise<PortfolioItem[] | { error: string }> {
+  try {
+    const response = await fetch(NPOINT_IO_PORTFOLIO_URL, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      // npoint might return 404 if the bin is empty or never written to, treat as empty array.
+      if (response.status === 404) {
+        return []; // Treat not found as an empty portfolio
+      }
+      return { error: `Failed to fetch portfolio from npoint.io: ${response.status} ${response.statusText}` };
+    }
+
+    const portfolioData: PortfolioItem[] = await response.json();
+
+    // Basic validation
+    if (!Array.isArray(portfolioData) || (portfolioData.length > 0 && !portfolioData.every(item => item.id && typeof item.weeklyInvestment === 'number' && item.name))) {
+      // If data is malformed, treat as empty and let it be overwritten by default or user changes.
+      console.warn(`Portfolio data from npoint.io (${NPOINT_IO_PORTFOLIO_URL}) is not in the expected format. Treating as empty.`);
+      return []; 
+    }
+    return portfolioData;
+  } catch (error) {
+    console.error('Error fetching portfolio from npoint.io:', error);
+    if (error instanceof Error) {
+      return { error: `Failed to load portfolio from npoint.io: ${error.message}` };
+    }
+    return { error: 'An unknown error occurred while loading the portfolio from npoint.io.' };
+  }
+}
+
+export async function saveRemotePortfolio(portfolio: PortfolioItem[]): Promise<{ success: boolean } | { error: string }> {
+  try {
+    const response = await fetch(NPOINT_IO_PORTFOLIO_URL, {
+      method: 'POST', // npoint.io uses POST to update the entire bin
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(portfolio),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      return { error: `Failed to save portfolio to npoint.io: ${response.status} ${response.statusText}. Details: ${errorBody}` };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving portfolio to npoint.io:', error);
+    if (error instanceof Error) {
+      return { error: `Failed to save portfolio to npoint.io: ${error.message}` };
+    }
+    return { error: 'An unknown error occurred while saving the portfolio to npoint.io.' };
   }
 }

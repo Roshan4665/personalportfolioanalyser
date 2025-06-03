@@ -4,24 +4,21 @@
 import * as React from 'react';
 import { analyzePortfolioAllocation } from '@/ai/flows/analyze-portfolio-allocation';
 import type { MutualFund, PortfolioItem, AnalysisResult, AnalyzePortfolioAllocationInput, PortfolioAggregateStats } from '@/types';
-// Removed parseCsvData import as it's used in actions.ts now
-import { fetchAndProcessFundData, getDefaultPortfolio } from '@/app/actions';
+import { fetchAndProcessFundData, getDefaultPortfolio, fetchRemotePortfolio, saveRemotePortfolio } from '@/app/actions';
 import { FundSearch } from '@/components/FundSearch';
 import { AddFundDialog } from '@/components/AddFundDialog';
 import { PortfolioManager } from '@/components/PortfolioManager';
 import { AllocationPieChart } from '@/components/AllocationPieChart';
-import { PortfolioSummaryStats } from '@/components/PortfolioSummaryStats'; // New component
+import { PortfolioSummaryStats } from '@/components/PortfolioSummaryStats';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from "@/hooks/use-toast";
-import { FileText, AlertTriangle } from 'lucide-react';
+import { FileText, AlertTriangle, CloudUpload, CloudDownload } from 'lucide-react';
 
-const LOCAL_STORAGE_PORTFOLIO_KEY = 'fundFolioPortfolio_v2'; // Changed key to avoid conflicts with old structure potentially
 const CDN_URL_MF_BASE = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mutual_funds.csv';
 const CDN_URL_MF1 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf1.csv';
 const CDN_URL_MF2 = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/mf2.csv';
-const CDN_URL_DEFAULT_PORTFOLIO = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/my_funds.json';
-
+const CDN_URL_DEFAULT_PORTFOLIO_FALLBACK = 'https://cdn.jsdelivr.net/gh/Roshan4665/personalportfolioanalyser/data/my_funds.json'; // Fallback if npoint fails
 
 export default function HomePage() {
   const [allMutualFunds, setAllMutualFunds] = React.useState<MutualFund[]>([]);
@@ -33,80 +30,86 @@ export default function HomePage() {
   const [isAnalyzing, setIsAnalyzing] = React.useState(false);
   const [isLoadingFundData, setIsLoadingFundData] = React.useState(true);
   const [fundDataError, setFundDataError] = React.useState<string | null>(null);
+  const [isInitialPortfolioLoadComplete, setIsInitialPortfolioLoadComplete] = React.useState(false);
+  const [isSavingPortfolio, setIsSavingPortfolio] = React.useState(false);
   const { toast } = useToast();
 
   React.useEffect(() => {
     const loadInitialPortfolio = async () => {
-      try {
-        const storedPortfolioJson = localStorage.getItem(LOCAL_STORAGE_PORTFOLIO_KEY);
-        let loadedPortfolio: PortfolioItem[] | null = null;
+      setIsInitialPortfolioLoadComplete(false);
+      let loadedPortfolio: PortfolioItem[] | null = null;
 
-        if (storedPortfolioJson) {
-          try {
-            const parsedPortfolio: PortfolioItem[] = JSON.parse(storedPortfolioJson);
-            // Basic validation: check if it's an array and items have id, weeklyInvestment, and name
-            if (Array.isArray(parsedPortfolio) && parsedPortfolio.every(item => item.id && typeof item.weeklyInvestment === 'number' && item.name)) {
-              loadedPortfolio = parsedPortfolio;
-            } else {
-              console.warn("Malformed portfolio data in local storage, attempting to load default from CDN.");
-              localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY);
-            }
-          } catch (error) {
-            console.error("Error parsing portfolio from local storage:", error);
-            localStorage.removeItem(LOCAL_STORAGE_PORTFOLIO_KEY); // Clear corrupted data
-          }
+      toast({ title: "Loading Portfolio", description: "Fetching your portfolio from npoint.io..." });
+      const remotePortfolioResult = await fetchRemotePortfolio();
+
+      if (remotePortfolioResult && !('error' in remotePortfolioResult) && remotePortfolioResult.length > 0) {
+        loadedPortfolio = remotePortfolioResult;
+        toast({
+          title: "Portfolio Loaded Remotely",
+          description: "Your portfolio has been loaded from npoint.io.",
+        });
+      } else {
+        if (remotePortfolioResult && 'error' in remotePortfolioResult) {
+          toast({ title: "Remote Load Failed", description: `Could not load from npoint.io: ${remotePortfolioResult.error}. Falling back to default portfolio from CDN.`, variant: "destructive" });
+        } else {
+          toast({ title: "Empty Remote Portfolio", description: `No portfolio found at npoint.io or it's malformed. Loading default portfolio from CDN: ${CDN_URL_DEFAULT_PORTFOLIO_FALLBACK}.`, variant: "default" });
         }
-
-        if (loadedPortfolio && loadedPortfolio.length > 0) {
-          setPortfolio(loadedPortfolio);
+        
+        const defaultPortfolioResult = await getDefaultPortfolio(); // Fetches from jsdelivr CDN
+        if (defaultPortfolioResult && !('error' in defaultPortfolioResult)) {
+          loadedPortfolio = defaultPortfolioResult;
           toast({
-            title: "Portfolio Loaded",
-            description: "Your portfolio has been loaded from the previous session.",
+            title: "Default Portfolio Loaded",
+            description: `Loaded ${defaultPortfolioResult.length} funds from CDN. Attempting to save this as your remote portfolio.`,
           });
+          // Attempt to save this default to npoint.io immediately
+          setIsSavingPortfolio(true);
+          const saveResult = await saveRemotePortfolio(defaultPortfolioResult);
+          setIsSavingPortfolio(false);
+          if (saveResult && 'error' in saveResult) {
+            toast({ title: "Failed to Save Default Remotely", description: `Could not save default portfolio to npoint.io: ${saveResult.error}`, variant: "destructive" });
+          } else {
+            toast({ title: "Default Portfolio Saved Remotely", description: "Default portfolio saved to npoint.io for future use." });
+          }
         } else {
           toast({
-            title: "Loading Default Portfolio",
-            description: `No local portfolio found or data was malformed. Attempting to load default funds from CDN: ${CDN_URL_DEFAULT_PORTFOLIO}.`,
+            title: "Failed to Load Default Portfolio",
+            description: defaultPortfolioResult?.error || "Could not load default funds from CDN fallback.",
+            variant: "destructive",
           });
-          const defaultPortfolioResult = await getDefaultPortfolio();
-          if (defaultPortfolioResult && !('error' in defaultPortfolioResult)) {
-            setPortfolio(defaultPortfolioResult);
-            // Default portfolio might not have all enriched data, it will be enriched when allMutualFunds are loaded
-            localStorage.setItem(LOCAL_STORAGE_PORTFOLIO_KEY, JSON.stringify(defaultPortfolioResult));
-            toast({
-              title: "Default Portfolio Loaded",
-              description: `Loaded ${defaultPortfolioResult.length} funds from CDN.`,
-            });
-          } else {
-            toast({
-              title: "Failed to Load Default Portfolio",
-              description: defaultPortfolioResult?.error || "Could not load default funds from CDN.",
-              variant: "destructive",
-            });
-            setPortfolio([]); // Ensure portfolio is empty if default load fails
-          }
+          loadedPortfolio = []; 
         }
-      } catch (error) {
-        console.error("Unexpected error loading initial portfolio:", error);
-        toast({
-          title: "Portfolio Load Error",
-          description: "An unexpected error occurred while loading your portfolio.",
-          variant: "destructive",
-        });
-        setPortfolio([]);
       }
+      setPortfolio(loadedPortfolio || []);
+      setIsInitialPortfolioLoadComplete(true);
     };
     loadInitialPortfolio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]); // Keep toast dependency
+  }, [toast]);
 
-  // Save portfolio to local storage whenever it changes
+  // Save portfolio to npoint.io whenever it changes AFTER initial load
   React.useEffect(() => {
-    // Only save if portfolio has items or if there was something previously in local storage (to clear it if it becomes empty)
-    if (typeof window !== 'undefined' && (portfolio.length > 0 || localStorage.getItem(LOCAL_STORAGE_PORTFOLIO_KEY))) {
-        localStorage.setItem(LOCAL_STORAGE_PORTFOLIO_KEY, JSON.stringify(portfolio));
-    }
-  }, [portfolio]);
+    const persistPortfolio = async () => {
+      if (isInitialPortfolioLoadComplete && !isLoadingFundData) { // Only save after initial load and fund data load
+        setIsSavingPortfolio(true);
+        toast({ title: "Saving Portfolio...", description: "Syncing your portfolio with npoint.io.", icon: <CloudUpload className="h-5 w-5 animate-pulse" /> });
+        const result = await saveRemotePortfolio(portfolio);
+        setIsSavingPortfolio(false);
+        if (result && 'error' in result) {
+          toast({ title: "Remote Save Failed", description: `Could not save portfolio to npoint.io: ${result.error}`, variant: "destructive" });
+        } else {
+          toast({ title: "Portfolio Saved Remotely", description: "Your portfolio is synced with npoint.io.", icon: <CloudDownload className="h-5 w-5 text-green-500" /> });
+        }
+      }
+    };
+
+    const timerId = setTimeout(() => {
+      persistPortfolio();
+    }, 1500); // Debounce saving by 1.5 seconds
+
+    return () => clearTimeout(timerId);
+
+  }, [portfolio, isInitialPortfolioLoadComplete, isLoadingFundData, toast]);
 
 
   React.useEffect(() => {
@@ -129,11 +132,12 @@ export default function HomePage() {
             description: `Successfully loaded and merged data for ${result.length} funds from CDN.`,
           });
           // Enrich portfolio items with potentially new data from allMutualFunds
+          // This should happen AFTER portfolio is loaded
           setPortfolio(prevPortfolio => 
             prevPortfolio.map(pItem => {
-              const fullFundData = result.find(mf => mf.name === pItem.name || mf.id === pItem.id); // Match by name or id
-              return fullFundData ? { ...fullFundData, weeklyInvestment: pItem.weeklyInvestment } : pItem;
-            })
+              const fullFundData = result.find(mf => mf.name === pItem.name || mf.id === pItem.id);
+              return fullFundData ? { ...pItem, ...fullFundData, weeklyInvestment: pItem.weeklyInvestment } : pItem;
+            }).filter(Boolean) as PortfolioItem[]
           );
         }
       } else {
@@ -165,7 +169,6 @@ export default function HomePage() {
       });
       return;
     }
-    // Ensure the fund object added to portfolio has all fields from allMutualFunds
     const fullFundData = allMutualFunds.find(mf => mf.id === fund.id);
     const itemToAdd = fullFundData ? { ...fullFundData, weeklyInvestment } : { ...fund, weeklyInvestment };
 
@@ -201,7 +204,6 @@ export default function HomePage() {
     }
   };
 
-  // Calculate Aggregate Portfolio Stats
   React.useEffect(() => {
     if (portfolio.length > 0) {
       let totalInvestment = 0;
@@ -234,7 +236,7 @@ export default function HomePage() {
 
 
   React.useEffect(() => {
-    if (portfolio.length > 0) {
+    if (portfolio.length > 0 && isInitialPortfolioLoadComplete) {
       const runAnalysis = async () => {
         setIsAnalyzing(true);
         try {
@@ -263,9 +265,9 @@ export default function HomePage() {
       };
       runAnalysis();
     } else {
-      setAssetAllocationResult(null); // Clear analysis if portfolio is empty
+      setAssetAllocationResult(null); 
     }
-  }, [portfolio, toast]);
+  }, [portfolio, toast, isInitialPortfolioLoadComplete]);
 
   const cdnSourcesMessage = `Fund data is loaded from CDN sources: ${CDN_URL_MF_BASE}, ${CDN_URL_MF1}, and ${CDN_URL_MF2}.`;
 
@@ -277,22 +279,26 @@ export default function HomePage() {
             FundFolio Analyzer
           </h1>
           <p className="text-lg text-muted-foreground mt-2">
-            {cdnSourcesMessage} Build your portfolio and gain insights.
+            {cdnSourcesMessage} Build your portfolio and gain insights. Portfolio stored on npoint.io.
           </p>
         </div>
       </header>
 
-      {isLoadingFundData && (
+      {(isLoadingFundData || !isInitialPortfolioLoadComplete) && (
         <Card className="shadow-md">
           <CardContent className="py-16 flex flex-col items-center justify-center text-center">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-t-transparent mb-6"></div>
-            <h3 className="font-headline text-xl text-primary mb-2">Loading All Fund Data...</h3>
-            <p className="text-muted-foreground max-w-md">Fetching and merging data from CDN sources. This may take a moment.</p>
+            <h3 className="font-headline text-xl text-primary mb-2">
+              {isLoadingFundData ? "Loading All Fund Data..." : "Loading Your Portfolio..."}
+            </h3>
+            <p className="text-muted-foreground max-w-md">
+              {isLoadingFundData ? "Fetching and merging data from CDN sources." : "Accessing your portfolio from remote storage."} This may take a moment.
+            </p>
           </CardContent>
         </Card>
       )}
 
-      {!isLoadingFundData && fundDataError && (
+      {!isLoadingFundData && isInitialPortfolioLoadComplete && fundDataError && (
         <Card className="shadow-md border-destructive">
           <CardHeader>
             <CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2" /> Fund Data Load Failed</CardTitle>
@@ -308,7 +314,7 @@ export default function HomePage() {
         </Card>
       )}
       
-      {!isLoadingFundData && !fundDataError && (
+      {!isLoadingFundData && isInitialPortfolioLoadComplete && !fundDataError && (
         <>
           {portfolio.length > 0 && (
             <>
@@ -317,6 +323,7 @@ export default function HomePage() {
                 portfolioItems={portfolio}
                 onRemoveItem={handleRemoveFromPortfolio}
                 onUpdateItemInvestment={handleUpdateWeeklyInvestment}
+                isSaving={isSavingPortfolio}
               />
               <div className="mt-8">
                 <AllocationPieChart analysisResult={assetAllocationResult} isLoading={isAnalyzing} />
@@ -328,7 +335,7 @@ export default function HomePage() {
              <Card className="shadow-md">
                 <CardContent className="py-16 flex flex-col items-center justify-center text-center">
                     <h3 className="font-headline text-xl text-primary mb-2">Your Portfolio is Empty</h3>
-                    <p className="text-muted-foreground">Search for funds below and add them to start analyzing.</p>
+                    <p className="text-muted-foreground">Search for funds below and add them to start analyzing. Your changes will be saved to npoint.io.</p>
                 </CardContent>
             </Card>
           )}
@@ -353,13 +360,13 @@ export default function HomePage() {
         </>
       )}
 
-      {!isLoadingFundData && allMutualFunds.length === 0 && !fundDataError && (
+      {!isLoadingFundData && isInitialPortfolioLoadComplete && allMutualFunds.length === 0 && !fundDataError && (
          <Card className="shadow-md">
           <CardContent className="py-16 flex flex-col items-center justify-center text-center">
             <FileText className="w-24 h-24 text-muted-foreground mb-6" />
             <h3 className="font-headline text-xl text-primary mb-2">No Fund Data Available</h3>
             <p className="text-muted-foreground">
-              Successfully connected to CDN, but no fund data was returned or data was malformed.
+              Successfully connected to CDN, but no fund data was returned or data was malformed. Cannot search for funds.
             </p>
           </CardContent>
         </Card>
@@ -374,3 +381,4 @@ export default function HomePage() {
     </div>
   );
 }
+

@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Trash2, ArrowUpDown, ArrowUp, ArrowDown, Edit3 } from 'lucide-react';
+import { Trash2, ArrowUpDown, ArrowUp, ArrowDown, Edit3, CloudUpload } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 
 interface AugmentedPortfolioItem extends PortfolioItem {
@@ -41,9 +41,10 @@ interface PortfolioManagerProps {
   portfolioItems: PortfolioItem[];
   onRemoveItem: (fundId: string) => void;
   onUpdateItemInvestment: (fundId: string, newAmount: number) => void;
+  isSaving?: boolean;
 }
 
-export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInvestment }: PortfolioManagerProps) {
+export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInvestment, isSaving }: PortfolioManagerProps) {
   const [sortConfig, setSortConfig] = React.useState<{ key: SortableKeys | null; direction: 'ascending' | 'descending' }>({ key: 'weeklyInvestment', direction: 'descending' });
   const [editingFundId, setEditingFundId] = React.useState<string | null>(null);
   const [editValue, setEditValue] = React.useState<string>('');
@@ -130,7 +131,6 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
         const valA = a[sortConfig.key as keyof AugmentedPortfolioItem];
         const valB = b[sortConfig.key as keyof AugmentedPortfolioItem];
         
-        // Handle null or undefined for numeric sort gracefully, sorting them to the bottom or top
         if (typeof valA === 'number' || typeof valB === 'number') {
             const numA = typeof valA === 'number' ? valA : (sortConfig.direction === 'ascending' ? Infinity : -Infinity);
             const numB = typeof valB === 'number' ? valB : (sortConfig.direction === 'ascending' ? Infinity : -Infinity);
@@ -175,7 +175,15 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle className="font-headline text-2xl text-primary">Your Portfolio Details</CardTitle>
+        <div className="flex justify-between items-center">
+          <CardTitle className="font-headline text-2xl text-primary">Your Portfolio Details</CardTitle>
+          {isSaving && (
+            <div className="flex items-center text-sm text-muted-foreground">
+              <CloudUpload className="mr-2 h-4 w-4 animate-pulse" />
+              Saving...
+            </div>
+          )}
+        </div>
         {portfolioItems.length > 0 && (
             <CardDescription>
             Total Weekly Investment: <span className="font-bold text-foreground">₹{totalWeeklyInvestment.toLocaleString()}</span>
@@ -238,7 +246,7 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
                     <TableCell className="text-right">{item.contributionToOverallMidCapPercent.toFixed(2)}%</TableCell>
                     <TableCell className="text-right">{item.contributionToOverallSmallCapPercent.toFixed(2)}%</TableCell>
                     <TableCell className="text-right sticky right-0 bg-card z-10 min-w-[100px]">
-                      <Button variant="ghost" size="icon" onClick={() => onRemoveItem(item.id)} className="text-destructive hover:text-destructive/80">
+                      <Button variant="ghost" size="icon" onClick={() => onRemoveItem(item.id)} className="text-destructive hover:text-destructive/80" disabled={isSaving}>
                         <Trash2 className="h-4 w-4" />
                         <span className="sr-only">Remove {item.name}</span>
                       </Button>
@@ -253,3 +261,4 @@ export function PortfolioManager({ portfolioItems, onRemoveItem, onUpdateItemInv
     </Card>
   );
 }
+
